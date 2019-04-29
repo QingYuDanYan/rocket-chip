@@ -45,12 +45,14 @@ class RoCCCoreIO(implicit p: Parameters) extends CoreBundle()(p) {
   val interrupt = Bool(OUTPUT)
   val exception = Bool(INPUT)
 }
+//RoCCCoreIO interpret the interface between ASIC and Rocket Core
 
 class RoCCIO(val nPTWPorts: Int)(implicit p: Parameters) extends RoCCCoreIO()(p) {
   val ptw = Vec(nPTWPorts, new TLBPTWIO)
   val fpu_req = Decoupled(new FPInput)
   val fpu_resp = Decoupled(new FPResult).flip
 }
+//RoCCIO interpret all interface of the ASIC, which add the interface to PTW and FPU among the RoCCCoreIO 
 
 /** Base classes for Diplomatic TL2 RoCC units **/
 abstract class LazyRoCC(
@@ -362,4 +364,110 @@ class RoccCommandRouter(opcodes: Seq[OpcodeSet])(implicit p: Parameters)
 
   assert(PopCount(cmdReadys) <= UInt(1),
     "Custom opcode matched for more than one accelerator")
+}
+
+class AccControllerIO extends CoreBundle()(p) {
+  
+  //Core side
+  val cmd = Decoupled(new RoCCCommand).flip
+  val resp = Decoupled(new RoCCResponse)
+  val busy = Bool(OUTPUT)
+  val interrupt = Bool(OUTPUT)
+  val exception = Bool(INPUT)
+
+  //Acc side 
+  val ap_clk_out = Bool(OUTPUT)
+  val ap_rst = Bool(OUTPUT)
+  val ap_start = Bool(OUTPUT)
+  val ap_done = Bool(INPUT)
+  val ap_idle = Bool(INPUT)
+  val ap_ready = Bool(INPUT)
+  val ap_return = Decoupled(new RoCCResponse).flip
+  val scalar_args = Decoupled(new RoCCCommand)
+
+  //Mem Controller side 
+  val bus_offset = Bits(width = xLen)
+  val mem_busy = Bool(INPUT)
+}
+
+class AccController extends Module{
+  val io = IO(new AccControllerIO)
+
+  val busy = Reg(init = vec.fill(outer.n){Bool(false)}) 
+
+  val cmd = Queue(io.cmd)
+  
+  when(cmd.fire()){
+  io.scalar_args := cmd
+  }
+
+  io.resp := io.ap_return
+
+  io.busy := !idle
+} 
+
+class MemCtrlIO extends CoreBundle)()(p){
+  //Core side 
+  val mem = new HellaCacheIO
+
+  //Acc side 
+  val ap_bus = new HellaCacheIO
+
+  //Acc Controller side 
+  val bus_offset = Bits(width = xLen)
+  val mem_busy = Bool(OUTPUT)
+}
+
+class AcceleratorInterface(opcodes: OpcodeSet, val n: Int = 4)(implicit p: Parameters) extends LazyRoCC(opcodes) {
+  override lazy val module = new AcceleratorControllerModuleImp(outer = this)
+}
+
+class AcceleratorInterfaceModuleImp(outer: AcceleratorController)(implicit p: Parameters) extends LazyRoCCModuleImp(outer) with HasCoreParameters {
+  val accctrl = new AccController
+
+  //Core side 
+  accctrl.io.cmd <> cmd
+  accctrl.io.resp <> resp
+  busy := accctrl.io.busy
+  exception := accctrl.io.exception
+  accctrl.io.interrupt := interrupt
+  
+  //Acc side 
+  //Mem side 
+} 
+
+//Rocc Accelerator Controller. Added By Liu Boran.
+/*Undecoupled design.
+class AcceleratorController(opcodes: OpcodeSet, val n: Int = 4)(implicit p: Parameters) extends LazyRoCC(opcodes) {
+  override lazy val module = new AcceleratorControllerModuleImp(outer = this)
+}
+
+class AcceleratorControllerModuleImp(outer: AcceleratorController)(implicit p: Parameters) extends LazyRoCCModuleImp(outer) with HasCoreParameters {
+  val busy = Reg(init = Vec.fill(outer.n){Bool(false)})
+  
+  val cmd = Queue(io.cmd)
+  val funct = cmd.bits.inst.funct
+  val addr = cmd.bits.rs2(log2Up(outer.n)-1,0)
+
+  when (io.mem.req.fire()){
+    busy(addr) := Bool(false)
+
+  }
+
+  val doResp = cmd.bits.inst.xd
+  val stallReg = busy(addr)
+  val stallLoad = doLoad && !io.mem.req.ready
+  val stallResp = doResp && !io.resp.ready
+
+  cmd.ready := !stallReg && !stallLoad && !stallResp
+
+  io.resp.valid := cmd.valid && doResp && !stallReg && ! stallLoad 
+
+  io.resp.bits.rd := cmd.bits.inst.rd
+
+  
+  io.busy := cmd.valid || busy.reduce(_||_)
+  io.interrupt := Bool(false)
+
+  
 }
