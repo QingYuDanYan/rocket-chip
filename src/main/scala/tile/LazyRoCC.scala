@@ -449,11 +449,11 @@ class UniALU(implicit p: Parameters) extends Module{
   val rs2 = Bits(width = 5)
   val res = Bits(width = 7) 
 
-  rs1 = io.scala_args.rs1
-  rs2 = io.scala_args.rs2
-  res = rs1 + rs2
+  rs1 := io.scala_args.bits.rs1
+  rs2 := io.scala_args.bits.rs2
+  res := rs1 + rs2
   
-  io.ap_return.data := res.bit
+  io.ap_return.bits.data := res
 }
 
 class AcceleratorInterface(opcodes: OpcodeSet, val n: Int = 4)(implicit p: Parameters) extends LazyRoCC(opcodes) {
