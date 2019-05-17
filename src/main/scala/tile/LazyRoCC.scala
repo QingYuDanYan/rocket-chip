@@ -366,7 +366,19 @@ class RoccCommandRouter(opcodes: Seq[OpcodeSet])(implicit p: Parameters)
     "Custom opcode matched for more than one accelerator")
 }
 
-class AccControllerIO extends CoreBundle()(p) {
+
+
+
+
+
+
+
+
+
+//RoCC-ACC-Interface. 
+//Added By Liu Boran.
+
+class AccControllerIO(implicit p: Parameters) extends CoreBundle()(p) {
   
   //Core side
   val cmd = Decoupled(new RoCCCommand).flip
@@ -390,23 +402,27 @@ class AccControllerIO extends CoreBundle()(p) {
   val mem_busy = Bool(INPUT)
 }
 
-class AccController extends Module{
+class AccController(implicit p: Parameters) extends Module{
   val io = IO(new AccControllerIO)
 
-  val busy = Reg(init = vec.fill(outer.n){Bool(false)}) 
-
   val cmd = Queue(io.cmd)
-  
-  when(cmd.fire()){
-  io.scalar_args := cmd
+  val busy = Reg(next = io.busy) 
+
+  //cmd.ready := Bool(false) 
+
+  when (cmd.fire()) {
+    io.scalar_args <> cmd.bits
   }
 
   io.resp := io.ap_return
 
-  io.busy := !idle
+  io.busy := !io.ap_idle
+
+  //cmd.ready := !io.ap_idle && io.ap_ready && io.ap_done
+  cmd.ready := io.ap_idle && !io.ap_ready && !io.ap_done
 } 
 
-class MemCtrlIO extends CoreBundle)()(p){
+class MemCtrlIO(implicit p: Parameters) extends CoreBundle()(p){
   //Core side 
   val mem = new HellaCacheIO
 
@@ -418,21 +434,47 @@ class MemCtrlIO extends CoreBundle)()(p){
   val mem_busy = Bool(OUTPUT)
 }
 
-class AcceleratorInterface(opcodes: OpcodeSet, val n: Int = 4)(implicit p: Parameters) extends LazyRoCC(opcodes) {
-  override lazy val module = new AcceleratorControllerModuleImp(outer = this)
+class UniALUIO(implicit p: Parameters) extends Bundle {
+  val scala_args = Decoupled(new RoCCCommand).flip
+  val ap_return = Decoupled(new RoCCResponse)
+  val ap_done = Bool(OUTPUT)
+  val ap_idle = Bool(OUTPUT)
+  val ap_ready = Bool(OUTPUT)
 }
 
-class AcceleratorInterfaceModuleImp(outer: AcceleratorController)(implicit p: Parameters) extends LazyRoCCModuleImp(outer) with HasCoreParameters {
-  val accctrl = new AccController
+class UniALU(implicit p: Parameters) extends Module{
+  val io = IO(new UniALUIO)
+
+  val rs1 = Bits(width = 5)
+  val rs2 = Bits(width = 5)
+  val res = Bits(width = 7) 
+
+  rs1 = io.scala_args.rs1
+  rs2 = io.scala_args.rs2
+  res = rs1 + rs2
+  
+  io.ap_return.data := res.bit
+}
+
+class AcceleratorInterface(opcodes: OpcodeSet, val n: Int = 4)(implicit p: Parameters) extends LazyRoCC(opcodes) {
+  override lazy val module = new AcceleratorInterfaceModuleImp( outer = this)
+}
+
+class AcceleratorInterfaceModuleImp(outer: AcceleratorInterface)(implicit p: Parameters) extends LazyRoCCModuleImp(outer) with HasCoreParameters {
+  val accctrl = Module(new AccController)
+  val exception = io.exception
 
   //Core side 
-  accctrl.io.cmd <> cmd
-  accctrl.io.resp <> resp
-  busy := accctrl.io.busy
-  exception := accctrl.io.exception
-  accctrl.io.interrupt := interrupt
+  accctrl.io.cmd <> io.cmd 
+  io.resp <> accctrl.io.resp 
+  io.busy := accctrl.io.busy
+  accctrl.io.exception := exception
+  io.interrupt <> accctrl.io.interrupt
   
-  //Acc side 
+  //Between Ctrler and Acc 
+  
+
+
   //Mem side 
 } 
 
@@ -470,4 +512,4 @@ class AcceleratorControllerModuleImp(outer: AcceleratorController)(implicit p: P
   io.interrupt := Bool(false)
 
   
-}
+}*/

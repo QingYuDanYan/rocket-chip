@@ -212,7 +212,7 @@ class WithRoccExample extends Config((site, here, up) => {
         counter
     },
     //ASIC interface
-    (p: parameters) => {
+    (p: Parameters) => {
         val accinterface = LazyModule(new AcceleratorInterface(OpcodeSet.custom3, n = 4)(p))
         accinterface
     })
