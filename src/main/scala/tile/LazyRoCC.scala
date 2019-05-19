@@ -445,13 +445,15 @@ class UniALUIO(implicit p: Parameters) extends Bundle {
 class UniALU(implicit p: Parameters) extends Module{
   val io = IO(new UniALUIO)
 
-  val rs1 = Bits(width = 5)
-  val rs2 = Bits(width = 5)
-  val res = Bits(width = 7) 
+  //val rs1 = Bits(width = 5)
+  //val rs2 = Bits(width = 5)
+  val rs1 = io.scala_args.bits.rs1
+  val rs2 = io.scala_args.bits.rs2
+  val res = rs1 + rs2
 
-  rs1 := io.scala_args.bits.rs1
-  rs2 := io.scala_args.bits.rs2
-  res := rs1 + rs2
+  //rs1 := io.scala_args.bits.rs1
+  //rs2 := io.scala_args.bits.rs2
+  //res := rs1 + rs2
   
   io.ap_return.bits.data := res
 }
@@ -462,6 +464,7 @@ class AcceleratorInterface(opcodes: OpcodeSet, val n: Int = 4)(implicit p: Param
 
 class AcceleratorInterfaceModuleImp(outer: AcceleratorInterface)(implicit p: Parameters) extends LazyRoCCModuleImp(outer) with HasCoreParameters {
   val accctrl = Module(new AccController)
+  val unialu = Module(new UniALU)
   val exception = io.exception
 
   //Core side 
@@ -472,7 +475,11 @@ class AcceleratorInterfaceModuleImp(outer: AcceleratorInterface)(implicit p: Par
   io.interrupt <> accctrl.io.interrupt
   
   //Between Ctrler and Acc 
-  
+  unialu.io.scala_args <> accctrl.io.scalar_args
+  accctrl.io.ap_return <> unialu.io.ap_return 
+  accctrl.io.ap_done <> unialu.io.ap_done 
+  accctrl.io.ap_idle <> unialu.io.ap_idle 
+  accctrl.io.ap_ready <> unialu.io.ap_ready 
 
 
   //Mem side 
